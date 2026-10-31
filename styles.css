@@ -1,0 +1,26 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+html, body, .stApp, button, input, textarea { font-family: 'Poppins', sans-serif !important; }
+.stApp { background: linear-gradient(-45deg,#ffd6ea,#d6e6ff,#d2f7e6,#fff1c2,#e6d6ff); background-size: 400% 400%; animation: bg 16s ease infinite; color: #1f2347; }
+@keyframes bg { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+@keyframes up { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:none} }
+@keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-24px)} }
+.stApp::before, .stApp::after { content:""; position:fixed; border-radius:50%; filter:blur(70px); z-index:0; pointer-events:none; animation: float 9s ease-in-out infinite; }
+.stApp::before { width:340px; height:340px; background:#ff7ab8aa; top:-80px; right:8%; }
+.stApp::after { width:380px; height:380px; background:#5cc8ffaa; bottom:-100px; left:25%; animation-delay:-4s; }
+[data-testid="stHeader"] { background: transparent; }
+.block-container { position: relative; z-index: 1; animation: up .6s ease both; }
+h1 { color:#3b2a8f; font-weight:700; text-shadow:0 2px 12px rgba(124,77,255,.25); }
+h2, h3, h4 { color:#2b2f6b; }
+[data-testid="stSidebar"], [data-testid="stSidebar"] > div:first-child { background: rgba(255,255,255,.45); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border-right: 1px solid rgba(255,255,255,.8); }
+[data-testid="stSidebar"] label { border-radius: 12px; padding: 4px 8px; transition: all .25s; }
+[data-testid="stSidebar"] label:hover { background: rgba(124,77,255,.12); transform: translateX(4px); }
+[data-testid="stMetric"], [data-testid="stExpander"], [data-testid="stAlert"], [data-testid="stDataFrame"], [data-testid="stDataEditor"] { background: rgba(255,255,255,.55); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,.85); border-radius: 18px; box-shadow: 0 8px 32px rgba(124,77,255,.15); animation: up .6s ease both; }
+[data-testid="stMetric"] { padding: 14px 18px; transition: transform .3s, box-shadow .3s; }
+[data-testid="stMetric"]:hover, [data-testid="stExpander"]:hover { transform: translateY(-5px); box-shadow: 0 14px 36px rgba(255,61,139,.22); }
+[data-testid="stExpander"] { transition: transform .3s, box-shadow .3s; overflow: hidden; }
+.stButton > button, [data-testid^="stBaseButton"] { border-radius: 999px; border: 1px solid rgba(255,255,255,.9); background: rgba(255,255,255,.65); backdrop-filter: blur(10px); font-weight: 600; transition: all .25s; }
+.stButton > button:hover, [data-testid^="stBaseButton"]:hover { transform: translateY(-3px) scale(1.03); box-shadow: 0 10px 24px rgba(124,77,255,.3); }
+.stButton > button[kind="primary"], [data-testid="stBaseButton-primary"] { background: linear-gradient(90deg,#ff3d8b,#7c4dff,#00b8ff); background-size: 200% 100%; color: #fff; border: none; animation: bg 6s linear infinite; }
+div[data-baseweb="input"], div[data-baseweb="select"] > div, div[data-baseweb="textarea"], textarea { background: rgba(255,255,255,.65) !important; border-radius: 12px !important; transition: box-shadow .25s; }
+div[data-baseweb="input"]:focus-within, div[data-baseweb="select"]:focus-within > div, textarea:focus { box-shadow: 0 0 0 3px rgba(124,77,255,.3); }
+hr { border-color: rgba(124,77,255,.2); }
