@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -13,16 +14,24 @@ DB_PATH = Path(__file__).resolve().parents[1] / "data" / "meetingos.db"
 _db_initialized = False
 
 
-def get_connection() -> sqlite3.Connection:
-    """Get a database connection with row factory, ensuring tables exist."""
+@contextmanager
+def get_connection():
+    """Yield a connection that commits on success and always closes."""
     global _db_initialized
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH)
     connection.row_factory = sqlite3.Row
-    if not _db_initialized:
-        _init_db_tables(connection)
-        _db_initialized = True
-    return connection
+    try:
+        if not _db_initialized:
+            _init_db_tables(connection)
+            _db_initialized = True
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 
 def _init_db_tables(connection: sqlite3.Connection) -> None:
@@ -111,7 +120,7 @@ def get_meetings() -> list[dict]:
     meetings = []
     for row in rows:
         meeting = dict(row)
-        meeting["decisions"] = json.loads(meeting.get("decisions", "[]"))
+        meeting["decisions"] = json.loads(meeting.get("decisions") or "[]")
         meetings.append(meeting)
     return meetings
 
@@ -126,7 +135,7 @@ def get_meeting(meeting_id: int) -> dict | None:
         ).fetchone()
     if row:
         meeting = dict(row)
-        meeting["decisions"] = json.loads(meeting.get("decisions", "[]"))
+        meeting["decisions"] = json.loads(meeting.get("decisions") or "[]")
         return meeting
     return None
 
@@ -210,7 +219,7 @@ def get_tasks(
         query += " AND t.meeting_id = ?"
         params.append(meeting_id)
 
-    query += " ORDER BY t.due_date ASC NULLS LAST, t.created_at DESC"
+    query += " ORDER BY (t.due_date IS NULL OR TRIM(t.due_date) = '') ASC, t.due_date ASC, t.created_at DESC"
 
     with get_connection() as connection:
         rows = connection.execute(query, params).fetchall()

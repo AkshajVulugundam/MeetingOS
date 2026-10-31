@@ -42,6 +42,7 @@ st.set_page_config(
 
 # Initialize database
 init_db()
+st.markdown(f"<style>{(BASE_DIR / 'styles.css').read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
 
 # Check API key
 api_key = os.getenv("GROQ_API_KEY", "").strip()
@@ -64,20 +65,9 @@ def render_sidebar() -> str:
         "ℹ️ About MeetingOS",
     ]
 
-    # Handle page switching from buttons
-    if "nav_page" in st.session_state and st.session_state["nav_page"] in pages:
-        default_idx = pages.index(st.session_state["nav_page"])
-    else:
-        default_idx = 0
-
-    page = st.sidebar.radio(
-        "Navigation",
-        pages,
-        index=default_idx,
-        key="navigation_radio",
-    )
-    # Sync session state
-    st.session_state["nav_page"] = page
+    if "_goto" in st.session_state:
+        st.session_state["navigation_radio"] = st.session_state.pop("_goto")
+    page = st.sidebar.radio("Navigation", pages, key="navigation_radio")
 
     st.sidebar.divider()
 
@@ -139,7 +129,7 @@ def render_dashboard():
     if stats["total"] == 0:
         st.info("👋 No tasks in the database yet. Process a meeting to extract action items!")
         if st.button("➕ Create Your First Meeting", type="primary"):
-            st.session_state["nav_page"] = "➕ New Meeting"
+            st.session_state["_goto"] = "➕ New Meeting"
             st.rerun()
         return
 
@@ -210,7 +200,7 @@ def render_dashboard():
             })
 
         df = pd.DataFrame(display_rows)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(df, hide_index=True)
 
         # Quick Status Update Bar
         st.markdown("---")
@@ -253,26 +243,24 @@ def render_new_meeting():
             st.session_state["pasted_transcript"] = content.split("Transcript:\n")[-1].strip()
             st.success("Sample benchmark loaded! Click 'Analyse Meeting' below.")
 
+    st.session_state.setdefault("input_date", datetime.now().date())
     # Meeting Metadata
     st.subheader("1. Meeting Details")
     m_col1, m_col2 = st.columns(2)
     with m_col1:
         meeting_title = st.text_input(
             "Meeting Title *",
-            value=st.session_state.get("input_title", ""),
             placeholder="e.g., Sprint Planning or College Event Platform",
             key="input_title",
         )
     with m_col2:
         meeting_date = st.date_input(
             "Meeting Date *",
-            value=st.session_state.get("input_date", datetime.now().date()),
             key="input_date",
         )
 
     participants = st.text_input(
         "Participants (optional)",
-        value=st.session_state.get("input_participants", ""),
         placeholder="e.g., Rahul, Meera, Ananya, Arjun",
         key="input_participants",
     )
@@ -327,7 +315,6 @@ def render_new_meeting():
 
         transcript = st.text_area(
             "Transcript (Review and edit before analysis) *",
-            value=st.session_state.get("pasted_transcript", ""),
             height=260,
             placeholder="The audio transcription will appear here. You can also edit it before analyzing...",
             key="pasted_transcript",
@@ -336,7 +323,6 @@ def render_new_meeting():
     else:
         transcript = st.text_area(
             "Paste Meeting Transcript *",
-            value=st.session_state.get("pasted_transcript", ""),
             height=280,
             placeholder="Rahul: Let's review the progress...\nMeera: I will complete login testing by November 3...\nArjun: I will complete the database integration by November 5...",
             key="pasted_transcript",
@@ -361,8 +347,10 @@ def render_new_meeting():
                     participants=participants.strip(),
                 )
                 st.session_state["meeting_result"] = result
-                st.session_state["review_tasks"] = result.get("tasks", [])
-                st.session_state["nav_page"] = "🔍 Review AI Findings"
+                st.session_state["approval_override"] = None
+                st.session_state["editor_ver"] = st.session_state.get("editor_ver", 0) + 1
+                st.session_state.pop("exec_msg", None)
+                st.session_state["_goto"] = "🔍 Review AI Findings"
             st.success("Analysis complete! Redirecting to Review AI Findings...")
             st.rerun()
         except Exception as e:
@@ -374,11 +362,19 @@ def render_review_findings():
     st.title("🔍 Review AI Findings")
     st.markdown("Human-in-the-Loop Verification: Review, edit, approve, or reject proposed tasks before execution.")
 
+    if st.session_state.get("exec_msg"):
+        st.success(f"🎉 {st.session_state['exec_msg']} Tasks are now tracked in SQLite.")
+        if st.button("📊 View Task Board on Dashboard", type="primary"):
+            st.session_state.pop("exec_msg", None)
+            st.session_state["_goto"] = "📊 Dashboard"
+            st.rerun()
+        return
+
     result = st.session_state.get("meeting_result")
     if not result:
         st.info("No meeting analysis currently pending review. Please add or analyze a meeting first.")
         if st.button("➕ Go to New Meeting", type="primary"):
-            st.session_state["nav_page"] = "➕ New Meeting"
+            st.session_state["_goto"] = "➕ New Meeting"
             st.rerun()
         return
 
@@ -414,10 +410,12 @@ def render_review_findings():
     with btn_col1:
         if st.button("Select All"):
             st.session_state["approval_override"] = True
+            st.session_state["editor_ver"] = st.session_state.get("editor_ver", 0) + 1
             st.rerun()
     with btn_col2:
         if st.button("Deselect All"):
             st.session_state["approval_override"] = False
+            st.session_state["editor_ver"] = st.session_state.get("editor_ver", 0) + 1
             st.rerun()
 
     override = st.session_state.get("approval_override", None)
@@ -439,7 +437,6 @@ def render_review_findings():
     # Render interactive data editor
     edited_df = st.data_editor(
         pd.DataFrame(table_rows),
-        use_container_width=True,
         hide_index=True,
         num_rows="dynamic",
         column_config={
@@ -451,7 +448,7 @@ def render_review_findings():
             "Supporting Evidence (Quote)": st.column_config.TextColumn("Evidence Quote", width="large"),
             "Confidence": st.column_config.TextColumn("AI Confidence", disabled=True, width="small"),
         },
-        key="review_findings_editor",
+        key=f"review_editor_{st.session_state.get('editor_ver', 0)}",
     )
 
     approved_df = edited_df[edited_df["Approve"] == True]
@@ -477,12 +474,20 @@ def render_review_findings():
             if not assignee or assignee.lower() in ("none", "null", "nan"):
                 assignee = None
 
+            try:
+                conf = float(str(row["Confidence"]).strip().rstrip("%")) / 100
+            except ValueError:
+                conf = 0.8
+            conf = 0.8 if conf != conf else min(max(conf, 0.0), 1.0)
+            ev = str(row["Supporting Evidence (Quote)"]).strip()
+            ev = "" if ev.lower() in ("nan", "none", "null") else ev
             approved_task_list.append({
                 "title": title,
                 "assignee": assignee,
                 "due_date": due,
                 "priority": str(row["Priority"]).strip() or "Unknown",
-                "evidence": str(row["Supporting Evidence (Quote)"]).strip(),
+                "evidence": ev,
+                "confidence": conf,
                 "status": "Pending",
             })
 
@@ -494,14 +499,10 @@ def render_review_findings():
                 )
 
             if exec_result["success"]:
-                st.success(f"🎉 {exec_result['message']} Tasks are now tracked in SQLite.")
-                st.balloons()
-                # Clear pending result so user doesn't re-execute by mistake
+                st.session_state["exec_msg"] = exec_result["message"]
                 st.session_state["meeting_result"] = None
                 st.session_state["approval_override"] = None
-                if st.button("📊 View Task Board on Dashboard"):
-                    st.session_state["nav_page"] = "📊 Dashboard"
-                    st.rerun()
+                st.rerun()
             else:
                 st.error(f"Execution failed: {exec_result['message']}")
         except Exception as exc:
@@ -628,7 +629,7 @@ def render_meeting_history():
                     }
                     for t in meeting_tasks
                 ])
-                st.dataframe(task_df, use_container_width=True, hide_index=True)
+                st.dataframe(task_df, hide_index=True)
             else:
                 st.caption("No tasks were approved for this meeting.")
 

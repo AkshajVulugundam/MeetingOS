@@ -16,6 +16,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(BASE_DIR / ".env")
 
 MODEL_ID = "openai/gpt-oss-20b"
+FALLBACK_MODEL = "llama-3.3-70b-versatile"
 TRANSCRIPTION_MODEL = "whisper-large-v3-turbo"
 
 # Free tier limits
@@ -52,7 +53,7 @@ def transcribe_audio(audio_bytes: bytes, filename: str, language: str | None = N
             model=TRANSCRIPTION_MODEL,
             file=audio_tuple,
             response_format="verbose_json",
-            language=language or None,
+            **({"language": language.strip()} if language and language.strip() else {}),
             temperature=0.0,
         )
         return response.text.strip()
@@ -109,6 +110,14 @@ def _extract_json_from_response(raw_text: str) -> dict[str, Any]:
     raise ValueError(f"Could not parse valid JSON from AI response: {text[:200]}...")
 
 
+def _to_conf(value: Any) -> float:
+    try:
+        c = float(value)
+    except (TypeError, ValueError):
+        return 0.8
+    return 0.8 if c != c else min(max(c, 0.0), 1.0)
+
+
 def analyze_meeting(transcript: str, meeting_date: str | None = None) -> dict[str, Any]:
     """Extract a summary, decisions and evidence-backed action items as JSON.
 
@@ -162,38 +171,43 @@ Output ONLY the JSON object starting with {{ and ending with }}. Do not include 
 
     user_message = f"Please analyze this meeting transcript and output JSON:\n\n{transcript}"
 
-    content = ""
-    # Attempt 1: Groq JSON Mode
-    try:
-        completion = client.chat.completions.create(
-            model=MODEL_ID,
+    def _ask(model: str, json_mode: bool, extra: str = "") -> str:
+        kwargs = dict(
+            model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
+                {"role": "user", "content": user_message + extra},
             ],
-            response_format={"type": "json_object"},
             temperature=0.1,
-            max_completion_tokens=3000,
+            max_tokens=8000,
         )
-        content = completion.choices[0].message.content or ""
-    except APIError as e:
-        # If Groq server-side json_validate_failed occurred, fallback to standard completion
-        if "json_validate_failed" in str(e) or "Failed to validate JSON" in str(e):
-            fallback_completion = client.chat.completions.create(
-                model=MODEL_ID,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {
-                        "role": "user",
-                        "content": user_message + "\n\nIMPORTANT: Return valid raw JSON starting with { and ending with }.",
-                    },
-                ],
-                temperature=0.1,
-                max_completion_tokens=3000,
-            )
-            content = fallback_completion.choices[0].message.content or ""
-        else:
-            raise
+        if model == MODEL_ID:
+            kwargs["extra_body"] = {"reasoning_effort": "low", "include_reasoning": False}
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        try:
+            resp = client.chat.completions.create(**kwargs)
+        except TypeError:  # older groq SDK: drop newer-only options
+            kwargs.pop("extra_body", None)
+            resp = client.chat.completions.create(**kwargs)
+        msg = resp.choices[0].message
+        return msg.content or ""
+
+    content = ""
+    last_err = None
+    for model in (MODEL_ID, FALLBACK_MODEL):
+        for json_mode in (True, False):
+            try:
+                content = _ask(model, json_mode, "" if json_mode else "\n\nReturn raw JSON only, starting with { and ending with }.")
+            except Exception as e:  # try next route
+                last_err = e
+                continue
+            if content.strip():
+                break
+        if content.strip():
+            break
+    if not content.strip():
+        raise RuntimeError(f"Model returned no output. Last error: {last_err}")
 
     # Parse and validate the JSON
     result = _extract_json_from_response(content)
@@ -222,7 +236,7 @@ Output ONLY the JSON object starting with {{ and ending with }}. Do not include 
             "due_date": task.get("due_date") or None,
             "priority": str(task.get("priority", "Unknown")).strip() or "Unknown",
             "evidence": str(task.get("evidence", "")).strip(),
-            "confidence": float(task.get("confidence", 0.8)),
+            "confidence": _to_conf(task.get("confidence")),
         })
     result["tasks"] = cleaned_tasks
 

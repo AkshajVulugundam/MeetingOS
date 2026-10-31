@@ -80,21 +80,40 @@ class TaskRecord(BaseModel):
 
 
 def validate_tasks(task_list: list[dict]) -> list[dict]:
-    """Validate and clean a list of task dictionaries.
-
-    Returns only valid tasks with at least a non-empty title.
-    """
+    """Sanitize and validate tasks; bad optional fields are fixed, not dropped."""
     validated = []
     for item in task_list:
         try:
+            due = item.get("due_date")
+            due = str(due).strip() if due else None
+            if due:
+                try:
+                    datetime.strptime(due, "%Y-%m-%d")
+                except ValueError:
+                    due = None
+            pr = str(item.get("priority") or "Unknown").strip().capitalize()
+            if pr not in ("High", "Medium", "Low", "Unknown"):
+                pr = "Unknown"
+            try:
+                conf = float(item.get("confidence", 0.0))
+            except (TypeError, ValueError):
+                conf = 0.0
+            conf = 0.0 if conf != conf else min(max(conf, 0.0), 1.0)
+            who = item.get("assignee")
+            who = str(who).strip()[:200] if who else None
+            if who and who.lower() in ("none", "null", "nan"):
+                who = None
+            status = item.get("status", "Pending")
+            if status not in ("Pending", "In Progress", "Completed", "Rejected"):
+                status = "Pending"
             task = TaskRecord(
-                title=str(item.get("title", "")).strip(),
-                assignee=item.get("assignee"),
-                due_date=item.get("due_date"),
-                priority=item.get("priority", "Unknown"),
-                evidence=str(item.get("evidence", "")).strip(),
-                confidence=float(item.get("confidence", 0.0)),
-                status=item.get("status", "Pending"),
+                title=str(item.get("title", "")).strip()[:500],
+                assignee=who,
+                due_date=due,
+                priority=pr,
+                evidence=str(item.get("evidence", "")).strip()[:2000],
+                confidence=conf,
+                status=status,
             )
             if task.title:
                 validated.append(task.model_dump(exclude_none=True))
@@ -111,7 +130,7 @@ def is_overdue(due_date: Optional[str], status: str) -> bool:
     - The due_date is before today
     - Status is not Completed
     """
-    if not due_date or status == "Completed":
+    if not due_date or status in ("Completed", "Rejected"):
         return False
     try:
         deadline = datetime.strptime(due_date, "%Y-%m-%d").date()
