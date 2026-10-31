@@ -218,3 +218,5 @@ MeetingOS includes a built-in benchmark scenario (`sample_transcript.txt`):
 - **PowerShell ExecutionPolicy Error:** Run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` before activating `.venv`.
 - **Groq Rate Limit (HTTP 429):** The free tier has TPM/RPM limits. Wait 10-15 seconds and re-analyze.
 - **Audio file larger than 25 MB:** Groq's free endpoint has a 25 MB file limit. Compress to MP3 or test with shorter recordings.
+#   M e e t i n g O S  
+ 
