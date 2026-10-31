@@ -75,7 +75,7 @@ meetingos/
 
 ### Prerequisites
 - Python 3.10+
-- A free [Groq API key](https://console.groq.com)
+- A free [Groq API key](https://console.groq.com/)
 
 ### Installation
 
